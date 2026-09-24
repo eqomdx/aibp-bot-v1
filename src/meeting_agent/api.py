@@ -14,6 +14,7 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -170,6 +171,26 @@ app = FastAPI(
     version=__version__,
     description=API_DESCRIPTION,
 )
+
+
+def _openapi() -> dict:
+    """The generated schema, minus FastAPI's default 422 response.
+
+    Malformed requests are reported as 400 by _bad_request below, so documenting
+    422 would mislead clients such as Copilot Studio.
+    """
+    if app.openapi_schema is None:
+        schema = get_openapi(title=app.title, version=app.version, description=app.description, routes=app.routes)
+        for path in schema.get("paths", {}).values():
+            for operation in path.values():
+                operation.get("responses", {}).pop("422", None)
+        for name in ("HTTPValidationError", "ValidationError"):
+            schema.get("components", {}).get("schemas", {}).pop(name, None)
+        app.openapi_schema = schema
+    return app.openapi_schema
+
+
+app.openapi = _openapi
 
 
 def _error(status: int, code: str, message: str) -> JSONResponse:

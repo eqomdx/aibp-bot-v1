@@ -207,7 +207,7 @@ uvicorn meeting_agent.api:app --reload
 
 Then open http://127.0.0.1:8000/docs to try the endpoints. The OpenAPI schema is at http://127.0.0.1:8000/openapi.json.
 
-That address is for development only. Copilot Studio can only call a service at a reachable **HTTPS** address, so the service will need hosting, for example on Azure App Service or Azure Container Apps. Hosting isn't part of this repo yet. Once hosted, import the OpenAPI schema into **Copilot Studio → Tools → REST API** (or a custom connector). The operations are `health` and `validateExtraction`. FastAPI publishes OpenAPI 3.1; if the import only accepts an older version, convert the schema first.
+That address is for development only. Copilot Studio can only call a service at a reachable **HTTPS** address, so the service will need hosting, for example on Azure App Service or Azure Container Apps. Hosting isn't part of this repo yet. For a demo without Azure hosting, see [Copilot Studio demo via Microsoft Dev Tunnels](#copilot-studio-demo-via-microsoft-dev-tunnels). The operations are `health` and `validateExtraction`.
 
 **Before hosting it anywhere public, put authentication in front of it**, for example an API key or Microsoft Entra ID. The service holds no secrets and writes nothing, but it has no authentication of its own.
 
@@ -260,6 +260,93 @@ The service has no path to a model or an external system. It doesn't import the 
 AI proposes → Python validates → PM reviews → only then does Power Automate update external systems
 ```
 
+## Copilot Studio demo via Microsoft Dev Tunnels
+
+**This is for MVP and demo use only. It is not production hosting.** Use it when an Azure App Service or Container App can't be created yet. The API runs on your laptop, and a Microsoft Dev Tunnel gives it a public HTTPS address that Copilot Studio can call.
+
+```text
+Copilot Studio → Dev Tunnel HTTPS URL → local FastAPI (port 8000) → POST /validate → deterministic validation
+```
+
+### Prerequisites
+- Python and the project dependencies (see [Setup](#setup))
+- Microsoft Dev Tunnels CLI: `winget install Microsoft.devtunnel`
+- A Microsoft account, Entra ID (work) account or GitHub account to sign in to Dev Tunnels, once per machine: `devtunnel user login`
+
+### Running it
+You need two terminals. **The laptop must stay on and both must keep running** for Copilot Studio to reach the API.
+
+Terminal 1, the API:
+
+```powershell
+.\scripts\start_api.ps1
+```
+
+Terminal 2, the tunnel:
+
+```powershell
+.\scripts\start_tunnel.ps1
+```
+
+`start_api.ps1` runs `uvicorn meeting_agent.api:app --port 8000` from the project's `.venv`.
+
+- It binds to `127.0.0.1`, which is all the tunnel needs.
+- `-BindAddress 0.0.0.0` also opens the API to your local network, the same as running `uvicorn meeting_agent.api:app --host 0.0.0.0 --port 8000` directly.
+
+`start_tunnel.ps1` hosts a **persistent, named tunnel** (`aibp-meeting-agent`), so the public URL stays the same between runs and Copilot Studio doesn't need reconfiguring.
+
+- The first run creates the tunnel with anonymous access and adds port 8000.
+- The host prints `Connect via browser:` followed by two URLs. Use the one ending `-8000.<region>.devtunnels.ms`, with no `:8000` port suffix. It's standard HTTPS on port 443, which Copilot Studio needs.
+- It also prints an `Inspect network activity` URL. That page requires your Dev Tunnels login, so it isn't public.
+- Unused tunnels expire after 30 days.
+- If that name is taken, pass another: `-TunnelId <name>`.
+
+The one-off alternative gets a new random URL every time:
+
+```bash
+devtunnel host -p 8000 --allow-anonymous
+```
+
+Check that everything works end to end through the public URL:
+
+```powershell
+.venv\Scripts\python scripts\smoke_test.py https://<id>-8000.<region>.devtunnels.ms
+```
+
+### Connecting Copilot Studio
+Copilot Studio REST API tools need an **OpenAPI v2 (Swagger 2.0)** file with a concrete host. FastAPI publishes OpenAPI 3.1 without a host. Generate a v2 file for your tunnel URL:
+
+```powershell
+.venv\Scripts\python scripts\export_copilot_openapi.py https://<id>-8000.<region>.devtunnels.ms
+```
+
+That writes `copilot/openapi.json`, which is git-ignored because it contains your tunnel host.
+
+- It's built from the app's live schema, so nothing is maintained by hand. Re-run it if the API or the URL changes.
+- `extraction` is declared as a string, so Copilot passes the prompt's JSON output as text, which the API accepts.
+
+Then, in Copilot Studio:
+1. Go to **Agent → Tools → Add a tool → New tool → REST API**.
+2. Upload `copilot/openapi.json`.
+3. Choose authentication **None**.
+4. Select the `validateExtraction` tool, and optionally `health`.
+
+If REST API tools aren't available in your environment, use **Topic → Add node → Advanced → Send HTTP request** instead:
+- Method: `POST`
+- URL: `https://<id>-8000.<region>.devtunnels.ms/validate`
+- Header: `Content-Type: application/json`
+- Body: the request JSON
+
+When you open `/docs` in a browser through the tunnel, Dev Tunnels first shows a one-time "You are about to connect" anti-phishing page. Select **Continue**. API calls such as Copilot Studio's JSON requests are not affected. If a client ever gets that HTML page instead of JSON, send the header `X-Tunnel-Skip-AntiPhishing-Page: true`.
+
+### Security for the demo
+- **Anonymous tunnel access is used only because Copilot Studio can't do an interactive tunnel login. Don't treat it as a production security model.** Anyone who has the URL can call the API while the tunnel is up.
+- The exposure is limited: the API is read-and-validate only, stores nothing, holds no secrets, reads no `.env`, and can't write to SharePoint, Planner, email or Teams.
+- Stop the tunnel (Ctrl+C) when you're not demoing.
+- Run `devtunnel delete aibp-meeting-agent` to remove the tunnel entirely.
+- Nothing about the tunnel goes in the repo: no tunnel IDs, URLs or tokens. The Dev Tunnels login is kept by the CLI in your user profile.
+- For anything beyond a demo, host the API properly (App Service or Container Apps) with authentication, such as an API key or Entra ID.
+
 ## Azure setup
 When valid credentials are available, set these in `.env`:
 
@@ -308,6 +395,7 @@ src/meeting_agent/
   evaluate.py          TC01–TC13 scenario runner
   validation_service.py validate_extraction(): the no-model validation pipeline
   api.py               FastAPI app: GET /health, POST /validate (Copilot Studio integration)
+scripts/               start_api.ps1, start_tunnel.ps1, smoke_test.py, export_copilot_openapi.py
 scenarios/             model-behaviour fixtures
 tests/                 pytest suite
 ```

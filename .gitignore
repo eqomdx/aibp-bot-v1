@@ -11,3 +11,6 @@ dist/
 
 # Tooling
 .pytest_cache/
+
+# Machine-specific: generated for a live tunnel URL by scripts/export_copilot_openapi.py
+copilot/openapi.json
