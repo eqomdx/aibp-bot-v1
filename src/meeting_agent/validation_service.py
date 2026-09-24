@@ -12,7 +12,7 @@ import json
 from datetime import date
 from typing import Any
 
-from meeting_agent.errors import ExtractionError
+from meeting_agent.errors import ExtractionError, MeetingDateError
 from meeting_agent.project_items import build_extraction_summary, deduplicate, parse_project_items
 from meeting_agent.review import apply_review_checks
 from meeting_agent.transcript import detect_meeting_date, validate_transcript
@@ -49,6 +49,17 @@ def validate_extraction(
         "meeting_date": meeting_date.isoformat() if meeting_date else None,
         "items": [item.to_dict() for item in items],
     }
+
+
+def parse_meeting_date(text: str | None) -> date | None:
+    """Parse an optional YYYY-MM-DD meeting date; blank means none. Raises MeetingDateError."""
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return None
+    try:
+        return date.fromisoformat(cleaned)
+    except ValueError:
+        raise MeetingDateError(f"meeting_date '{text}' is not a valid date in YYYY-MM-DD form.") from None
 
 
 def _to_json(extraction: Any) -> str:

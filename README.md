@@ -21,6 +21,7 @@ The meeting logic lives in `MeetingService` and doesn't depend on any interface 
 ✓ Mock provider                          works offline, no credentials
 ✓ Replaceable Azure provider             implemented and unit-tested; not yet run live (no valid credentials)
 ✓ Copilot Studio validation API          POST /validate (FastAPI); no model, no credentials
+✓ Copilot Studio MCP tool                /mcp: validate_meeting_extraction (Streamable HTTP)
 ```
 
 ## Setup
@@ -347,6 +348,80 @@ When you open `/docs` in a browser through the tunnel, Dev Tunnels first shows a
 - Nothing about the tunnel goes in the repo: no tunnel IDs, URLs or tokens. The Dev Tunnels login is kept by the CLI in your user profile.
 - For anything beyond a demo, host the API properly (App Service or Container Apps) with authentication, such as an API key or Entra ID.
 
+## Copilot Studio MCP integration
+
+**The MCP endpoint validates Copilot-generated output. It does not do the original LLM extraction itself.**
+
+Use this when your Copilot Studio environment offers **Tools → MCP** but no usable generic HTTP connector. The same FastAPI app that serves `/validate` also serves MCP at `/mcp`. Both call the same function, `validation_service.validate_extraction()`, so they return identical records. A test checks this for six scenarios.
+
+```text
+Copilot Studio (does the extraction)
+    ↓  MCP tool call: validate_meeting_extraction
+Dev Tunnel (public HTTPS)
+    ↓
+Python app → /mcp → validation_service → RAID records for PM review
+```
+
+### Running it
+It's the same two terminals as the [Dev Tunnels demo](#copilot-studio-demo-via-microsoft-dev-tunnels):
+
+```powershell
+.\scripts\start_api.ps1       # terminal 1: FastAPI with /health, /validate and /mcp on port 8000
+.\scripts\start_tunnel.ps1    # terminal 2: public HTTPS URL
+```
+
+The MCP server URL is the tunnel URL plus `/mcp`, for example `https://<id>-8000.<region>.devtunnels.ms/mcp`.
+
+To check everything end to end, run `.venv\Scripts\python scripts\smoke_test.py <tunnel URL>`. It connects to `/mcp` with the official MCP client (`initialize`, `tools/list`, `tools/call`) as well as testing the REST endpoints.
+
+### Adding it in Copilot Studio
+Generative orchestration must be turned on for the agent. Then:
+
+1. Go to **Agent → Tools → Add a tool → New tool → Model Context Protocol**.
+2. Fill in the server details:
+   - **Server name:** `AIBP Meeting Agent`
+   - **Server description:** "Validates AI-extracted meeting actions, decisions and RAID items against the original transcript and flags anything a PM must review."
+   - **Server URL:** `https://<id>-8000.<region>.devtunnels.ms/mcp`
+3. Set **Authentication** to **None**, then select **Create**.
+4. Select **Create a new connection**, then **Add to agent**.
+
+### The tool
+**`validate_meeting_extraction`** is read-only. It's marked `readOnlyHint`, is idempotent, and reaches no external systems.
+
+| Input | Type | Required | Meaning |
+|---|---|---|---|
+| `transcript` | string | yes | The original transcript; quotes, speakers and timestamps are checked against it |
+| `extraction` | object | yes | Copilot's extraction, `{"items": [...]}` |
+| `project` | string | no | Applied to every item and used for record IDs (`AIBP-1`); `""` if unknown |
+| `meeting_date` | string | no | `YYYY-MM-DD`, used to resolve "Friday" or "tomorrow"; `""` if unknown |
+
+The output is the same JSON `/validate` returns, sent both as MCP structured content and as text:
+
+```json
+{
+  "meetingSummary": "Extracted 1 project items (1 Action) covering Update RAID log. 0 have an outstanding Review Flag.",
+  "project": "AIBP",
+  "meeting_date": "2026-09-24",
+  "items": [{
+    "record_id": "AIBP-1", "number": 1, "type": "Action", "title": "Update RAID log", "owner": "Annie",
+    "due_date": "2026-09-25", "due_date_text": "Friday", "review_flag": "None", "needs_pm_review": false,
+    "source": {"speaker": "Annie", "quote": "Yep, I'll do that.", "timestamp": null, "verified": true},
+    "review_reasons": []
+  }]
+}
+```
+
+Errors come back as an MCP tool error: the result has `isError: true`, and its text starts with the same code the REST API uses. For example: `Error executing tool validate_meeting_extraction: invalid_extraction: Item 1 has type 'Task'. Allowed types: …`. The codes are `invalid_transcript`, `invalid_extraction`, `invalid_meeting_date` and `invalid_request`. An unexpected failure returns only `Error executing tool validate_meeting_extraction`, with no stack trace or internal details.
+
+### Notes
+- **No Azure OpenAI credentials are needed.** The MCP path, like `/validate`, never imports the OpenAI SDK or a provider, and never reads `.env`. Tests check this.
+- **Dev Tunnel anonymous access is for the demo only**, as described in the Dev Tunnels section above. Anyone with the URL can call the tool while the tunnel is up.
+- **Transport and schema:**
+  - **Transport:** Copilot Studio supports only Streamable HTTP; SSE was retired after August 2025. The server is stateless with JSON responses, using the official MCP Python SDK (`mcp` 2.x). It accepts every protocol version from 2024-11-05 to the current one.
+  - **Schema:** Copilot Studio hides tools whose schemas use `$ref`, and cuts off multi-type fields. So the tool's inputs are single-typed (optional values are strings, with `""` meaning "not given"), and a test enforces this.
+- **Host checks stay on.** The SDK's DNS-rebinding protection is kept, and it allows `localhost` without a port, because that's the Host header a Dev Tunnel forwards. A request with any other Host is refused with 421, and a foreign Origin with 403.
+- **Governance is unchanged:** Copilot proposes → Python validates → PM reviews → downstream automation later. The tool can't write to SharePoint, Planner, email or Teams.
+
 ## Azure setup
 When valid credentials are available, set these in `.env`:
 
@@ -394,7 +469,8 @@ src/meeting_agent/
   ask.py               chat interface (python -m meeting_agent.ask still works too)
   evaluate.py          TC01–TC13 scenario runner
   validation_service.py validate_extraction(): the no-model validation pipeline
-  api.py               FastAPI app: GET /health, POST /validate (Copilot Studio integration)
+  api.py               FastAPI app: GET /health, POST /validate, and /mcp (Copilot Studio integration)
+  mcp_server.py        MCP server: the validate_meeting_extraction tool (Streamable HTTP)
 scripts/               start_api.ps1, start_tunnel.ps1, smoke_test.py, export_copilot_openapi.py
 scenarios/             model-behaviour fixtures
 tests/                 pytest suite

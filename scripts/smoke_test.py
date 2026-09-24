@@ -3,8 +3,9 @@
     python scripts/smoke_test.py                                   # http://127.0.0.1:8000
     python scripts/smoke_test.py https://<id>-8000.<region>.devtunnels.ms
 
-Checks /health, /docs, /openapi.json and one real POST /validate. Uses only the
-standard library and sends no credentials. Exits 1 if any check fails.
+Checks /health, /docs, /openapi.json, one real POST /validate, and the MCP
+endpoint (/mcp) with the official MCP client: initialize, list tools, call
+validate_meeting_extraction. Sends no credentials. Exits 1 if any check fails.
 """
 
 import json
@@ -40,6 +41,40 @@ def request(base: str, path: str, body: dict | None = None) -> tuple[int, str, s
         return error.code, error.headers.get("Content-Type", ""), error.read().decode("utf-8", "replace")
 
 
+def check_mcp(base: str, check) -> None:
+    """Connect to /mcp as a real MCP client (Streamable HTTP), as Copilot Studio would."""
+    try:
+        import anyio
+        from mcp.client.session import ClientSession
+        from mcp.client.streamable_http import streamable_http_client
+    except ImportError:
+        check("MCP", False, "the mcp package is not installed (pip install -r requirements.txt)")
+        return
+
+    async def session_run():
+        async with streamable_http_client(base + "/mcp") as (read, write):
+            async with ClientSession(read, write) as session:
+                init = await session.initialize()
+                tools = await session.list_tools()
+                good = await session.call_tool("validate_meeting_extraction", PAYLOAD)
+                bad = await session.call_tool("validate_meeting_extraction",
+                                              {**PAYLOAD, "extraction": {"items": [{"type": "Task"}]}})
+                return init, tools, good, bad
+
+    init, tools, good, bad = anyio.run(session_run)
+    names = [tool.name for tool in tools.tools]
+    check("MCP initialize", bool(init.server_info.name),
+          f"server={init.server_info.name} protocol={init.protocol_version}")
+    check("MCP tools/list", "validate_meeting_extraction" in names, f"tools={names}")
+    record = (good.structured_content or {}).get("items", [{}])[0]
+    check("MCP tools/call", not good.is_error and record.get("record_id") == "AIBP-1"
+          and record.get("source", {}).get("verified") is True,
+          f"record_id={record.get('record_id')} verified={record.get('source', {}).get('verified')} "
+          f"due_date={record.get('due_date')} review_flag={record.get('review_flag')}")
+    message = bad.content[0].text if bad.content else ""
+    check("MCP tools/call (bad)", bad.is_error and "invalid_extraction" in message, message[:90])
+
+
 def main() -> int:
     base = (sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8000").rstrip("/")
     print(f"Testing {base}\n")
@@ -72,7 +107,9 @@ def main() -> int:
 
         status, _, body = request(base, "/validate", {**PAYLOAD, "extraction": {"items": [{"type": "Task"}]}})
         check("POST /validate (bad)", status == 400, f"{status} {body.strip()[:90]}")
-    except (urllib.error.URLError, OSError, ValueError) as error:
+
+        check_mcp(base, check)
+    except Exception as error:  # report any connection or protocol failure as a failed check
         check("connection", False, str(error))
 
     print(f"\n{sum(results)}/{len(results)} checks passed.")

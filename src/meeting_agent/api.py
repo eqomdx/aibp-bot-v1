@@ -6,10 +6,13 @@ A thin interface over validation_service: it checks the request shape, parses
 the meeting date and maps errors to HTTP responses. All domain logic lives in
 the existing modules. The API needs no credentials, reads no .env file, never
 calls a model and cannot write to any external system.
+
+The same app also serves MCP at /mcp (Streamable HTTP) for Copilot Studio;
+see mcp_server.py. Both interfaces call the same validation_service function.
 """
 
 import logging
-from datetime import date
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -17,10 +20,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.routing import Route
 
 from meeting_agent import __version__
-from meeting_agent.errors import ExtractionError, MeetingAgentError, TranscriptError
-from meeting_agent.validation_service import validate_extraction
+from meeting_agent.errors import ExtractionError, MeetingAgentError, MeetingDateError, TranscriptError
+from meeting_agent.mcp_server import MCP_PATH, build_mcp_app
+from meeting_agent.validation_service import parse_meeting_date, validate_extraction
 
 logger = logging.getLogger(__name__)
 
@@ -166,11 +171,41 @@ class ErrorResponse(BaseModel):
     message: str = Field(description="Human-readable explanation.")
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """Start a fresh MCP session manager for this run of the app (each can only run once)."""
+    mcp_app = build_mcp_app()
+    async with mcp_app.router.lifespan_context(mcp_app):
+        app.state.mcp_app = mcp_app
+        try:
+            yield
+        finally:
+            app.state.mcp_app = None
+
+
 app = FastAPI(
     title="AIBP Meeting Agent API",
     version=__version__,
     description=API_DESCRIPTION,
+    lifespan=_lifespan,
 )
+
+
+class _MCPEndpoint:
+    """ASGI endpoint for /mcp that forwards to the running MCP app."""
+
+    async def __call__(self, scope, receive, send) -> None:
+        mcp_app = getattr(app.state, "mcp_app", None)
+        if mcp_app is None:
+            response = JSONResponse(status_code=503, content={
+                "error": "mcp_unavailable", "message": "The MCP endpoint is not running. Start the app with uvicorn."})
+            await response(scope, receive, send)
+            return
+        await mcp_app(scope, receive, send)
+
+
+# A plain route rather than a Mount, so the endpoint is exactly /mcp (no /mcp/ redirect).
+app.router.routes.append(Route(MCP_PATH, endpoint=_MCPEndpoint()))
 
 
 def _openapi() -> dict:
@@ -236,12 +271,10 @@ def health() -> HealthResponse:
     tags=["validation"],
 )
 def validate(request: ValidateRequest):
-    raw_date = (request.meeting_date or "").strip()
     try:
-        meeting_date = date.fromisoformat(raw_date) if raw_date else None
-    except ValueError:
-        return _error(400, "invalid_meeting_date",
-                      f"meeting_date '{request.meeting_date}' is not a valid date in YYYY-MM-DD form.")
+        meeting_date = parse_meeting_date(request.meeting_date)
+    except MeetingDateError as exc:
+        return _error(400, "invalid_meeting_date", str(exc))
 
     try:
         result = validate_extraction(request.transcript, request.extraction, request.project, meeting_date)

@@ -27,6 +27,10 @@ class SummarisationError(MeetingAgentError):
     """The meeting service could not produce a summary."""
 
 
+class MeetingDateError(MeetingAgentError):
+    """A supplied meeting date is not a valid YYYY-MM-DD date."""
+
+
 class ExtractionError(MeetingAgentError):
     """The model's structured item output could not be understood."""
 
