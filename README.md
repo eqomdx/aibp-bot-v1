@@ -20,6 +20,7 @@ The meeting logic lives in `MeetingService` and doesn't depend on any interface 
 ✓ Prompt-injection protections           prompt rules + code-level checks
 ✓ Mock provider                          works offline, no credentials
 ✓ Replaceable Azure provider             implemented and unit-tested; not yet run live (no valid credentials)
+✓ Copilot Studio validation API          POST /validate (FastAPI); no model, no credentials
 ```
 
 ## Setup
@@ -166,6 +167,99 @@ python -m meeting_agent.evaluate
 
 Most of these cases test the model's judgement, so they only mean something with a real model. With `LLM_PROVIDER=mock`, only TC10 and TC13 run, because code enforces them; the rest show as skipped. Run it again once `LLM_PROVIDER=azure` works.
 
+## Copilot Studio / Validation API
+
+### Why this exists
+Copilot Studio has model access built in, but it doesn't hand out a raw Azure OpenAI key that could go into this app's `.env`. So the work is split:
+
+- **Copilot Studio does the AI reasoning.** A Copilot prompt reads the Teams transcript and produces the extraction JSON.
+- **This Python service does the governance.** It checks that output against the transcript with the same deterministic code the local agent uses, and returns clean RAID records for PM review.
+
+```text
+Teams transcript
+    ↓
+Copilot Studio            AI extraction (the model's work happens here)
+    ↓
+POST /validate            this service: no model, no credentials
+    ↓
+Python validation         evidence checks, duplicates, dates, IDs, Review Flags
+    ↓
+PM-reviewed RAID JSON
+    ↓
+PM approval → Power Automate → SharePoint / Planner
+```
+
+### Two ways to use the app
+
+| | Pattern A: standalone Python agent | Pattern B: Copilot Studio integration |
+|---|---|---|
+| Flow | Transcript → `MeetingService` → Azure OpenAI → extraction → validation | Transcript → Copilot Studio → extraction JSON → `/validate` → validation |
+| Entry point | `python -m meeting_agent.main extract` | `POST /validate` |
+| Needs `OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `CHAT_MODEL` | Yes, with `LLM_PROVIDER=azure` (or use `mock`) | **No** |
+
+Both patterns run the same validation code (`parse_project_items` → `deduplicate` → `apply_review_checks`), so the same extraction gives the same records either way. A test checks this.
+
+### Running it locally
+
+```bash
+uvicorn meeting_agent.api:app --reload
+```
+
+Then open http://127.0.0.1:8000/docs to try the endpoints. The OpenAPI schema is at http://127.0.0.1:8000/openapi.json.
+
+That address is for development only. Copilot Studio can only call a service at a reachable **HTTPS** address, so the service will need hosting, for example on Azure App Service or Azure Container Apps. Hosting isn't part of this repo yet. Once hosted, import the OpenAPI schema into **Copilot Studio → Tools → REST API** (or a custom connector). The operations are `health` and `validateExtraction`. FastAPI publishes OpenAPI 3.1; if the import only accepts an older version, convert the schema first.
+
+**Before hosting it anywhere public, put authentication in front of it**, for example an API key or Microsoft Entra ID. The service holds no secrets and writes nothing, but it has no authentication of its own.
+
+### Endpoints
+
+| Endpoint | What it does |
+|---|---|
+| `GET /health` | Returns `{"status": "ok"}` |
+| `POST /validate` | Validates an extraction against its transcript and returns RAID records |
+
+Request (only `transcript` and `extraction` are required):
+
+```json
+{
+  "transcript": "Kat: Annie, can you update the RAID log by Friday?
+Annie: Yep, I'll do that.",
+  "project": "AIBP",
+  "meeting_date": "2026-09-24",
+  "extraction": {"items": [{"type": "Action", "title": "Update RAID log", "description": "Update the RAID log.",
+                            "owner": "Annie", "due_date": "Friday", "confidence": "High",
+                            "source": {"speaker": "Annie", "quote": "Yep, I'll do that.", "timestamp": null}}]}
+}
+```
+
+- `extraction` can be the object `{"items": [...]}`, a bare list of items, or the Copilot prompt's raw text output. A code fence around the JSON is fine.
+- `meeting_date` is optional. Without it, a `Date: YYYY-MM-DD` line at the top of the transcript is used if there is one.
+
+The response is `{"meetingSummary", "project", "meeting_date", "items": [...]}`. Each item is the same RAID record `main extract` writes: `record_id` (`AIBP-1`), `number`, `due_date` (worked out as `2026-09-25`), `due_date_text` (`Friday`), `source_evidence`, `source.verified`, `review_flag`, `needs_pm_review`, `review_reasons` and the other schema fields. The full example is in `/docs`.
+
+Errors come back as **400** with `{"error": "<code>", "message": "..."}`. The codes are:
+- `invalid_transcript`: the transcript is empty
+- `invalid_extraction`: no `items` list, an unknown type such as `Task`, a missing description, or JSON that doesn't parse
+- `invalid_meeting_date`
+- `invalid_request`: a malformed request body
+
+An unexpected failure returns a generic **500** that never includes a stack trace or internal details.
+
+### Governance: Copilot output isn't trusted automatically
+`/validate` treats Copilot's extraction like any other AI output and checks it independently:
+
+- verifies each quote, speaker and timestamp against the original transcript
+- flags ambiguous output, missing required data (such as an Action with no owner) and inferred owners (`Chloe (suggested)` → `Inferred`)
+- rejects item types outside Action, Decision, Risk, Issue, Dependency and Assumption
+- never invents dates: relative dates are worked out only when the meeting date is known
+- merges repeated commitments, then renumbers items and regenerates record IDs
+
+The service has no path to a model or an external system. It doesn't import the OpenAI SDK or any provider (a test checks this), reads no `.env`, and can't write to SharePoint, create Planner tasks, or send emails or Teams messages. The workflow stays:
+
+```text
+AI proposes → Python validates → PM reviews → only then does Power Automate update external systems
+```
+
 ## Azure setup
 When valid credentials are available, set these in `.env`:
 
@@ -212,6 +306,8 @@ src/meeting_agent/
   main.py              CLI: summarise | extract | chat
   ask.py               chat interface (python -m meeting_agent.ask still works too)
   evaluate.py          TC01–TC13 scenario runner
+  validation_service.py validate_extraction(): the no-model validation pipeline
+  api.py               FastAPI app: GET /health, POST /validate (Copilot Studio integration)
 scenarios/             model-behaviour fixtures
 tests/                 pytest suite
 ```

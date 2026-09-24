@@ -1,5 +1,7 @@
 openai>=1.66
 python-dotenv>=1.0
+fastapi>=0.141
+uvicorn>=0.53
 pytest>=8.0
 
 # Installs this project (src/meeting_agent) in editable mode so
