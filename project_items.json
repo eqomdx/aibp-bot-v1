@@ -1,0 +1,89 @@
+{
+  "transcript": "transcript.md",
+  "items": [
+    {
+      "type": "action",
+      "description": "Have the demo ready.",
+      "owner": null,
+      "due_date": "Friday",
+      "source": "We need to have the demo ready for Friday.",
+      "confidence": "medium",
+      "source_verified": true
+    },
+    {
+      "type": "action",
+      "description": "Investigate whether the system can detect a transcript automatically and let Kazim know the findings.",
+      "owner": "Annie",
+      "due_date": null,
+      "source": "I'll investigate whether the system can detect a transcript automatically and let Kazim know what I find.",
+      "confidence": "high",
+      "source_verified": true
+    },
+    {
+      "type": "action",
+      "description": "Ask Chloe for a sample project transcript; if she has nothing suitable, create an example.",
+      "owner": "Izzy",
+      "due_date": null,
+      "source": "I'll ask Chloe for one. If she doesn't have anything suitable, I'll create an example.",
+      "confidence": "high",
+      "source_verified": true
+    },
+    {
+      "type": "decision",
+      "description": "Use SharePoint for RAID data in the first version; Planner may be revisited later.",
+      "owner": null,
+      "due_date": null,
+      "source": "Yes, SharePoint makes sense for the first version.",
+      "confidence": "medium",
+      "source_verified": true
+    },
+    {
+      "type": "issue",
+      "description": "The team does not yet have a sample project transcript.",
+      "owner": null,
+      "due_date": null,
+      "source": "we still don't have the sample project transcript.",
+      "confidence": "high",
+      "source_verified": true
+    },
+    {
+      "type": "dependency",
+      "description": "Getting a sample transcript depends on whether Chloe has something suitable.",
+      "owner": "Izzy",
+      "due_date": null,
+      "source": "If she doesn't have anything suitable, I'll create an example.",
+      "confidence": "medium",
+      "source_verified": true
+    }
+  ],
+  "missing_information": [
+    {
+      "item_number": 1,
+      "item_type": "action",
+      "item_description": "Have the demo ready.",
+      "gap": "owner",
+      "message": "No owner stated."
+    },
+    {
+      "item_number": 2,
+      "item_type": "action",
+      "item_description": "Investigate whether the system can detect a transcript automatically and let Kazim know the findings.",
+      "gap": "due_date",
+      "message": "No due date stated."
+    },
+    {
+      "item_number": 3,
+      "item_type": "action",
+      "item_description": "Ask Chloe for a sample project transcript; if she has nothing suitable, create an example.",
+      "gap": "due_date",
+      "message": "No due date stated."
+    },
+    {
+      "item_number": 5,
+      "item_type": "issue",
+      "item_description": "The team does not yet have a sample project transcript.",
+      "gap": "owner",
+      "message": "No owner stated."
+    }
+  ]
+}
