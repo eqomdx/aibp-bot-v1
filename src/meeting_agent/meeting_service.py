@@ -1,15 +1,16 @@
 """Meeting-processing logic.
 
-Knows about meetings and prompts, not about Azure or authentication. Any
-interface (CLI today; Copilot Studio, Teams or a web API later) should call
-this service rather than an LLM directly.
+Knows about meetings and prompts, not about Azure, authentication or any user
+interface. Every interface (CLI today; Copilot Studio, Teams or a web API
+later) should call this service rather than an LLM directly, so they all get
+the same prompts, checks and safeguards.
 """
 
 from collections.abc import Sequence
+from datetime import date
 
 from meeting_agent.errors import QuestionError, SummarisationError
-from meeting_agent.missing_information import InformationGap, find_missing_information
-from meeting_agent.project_items import ProjectItem, parse_project_items, verify_sources
+from meeting_agent.project_items import ProjectItem, deduplicate, parse_project_items
 from meeting_agent.prompts import (
     EXTRACTION_SYSTEM_PROMPT,
     QA_SYSTEM_PROMPT,
@@ -19,7 +20,9 @@ from meeting_agent.prompts import (
     build_summary_prompt,
 )
 from meeting_agent.providers.base import LLMProvider
-from meeting_agent.qa import Answer, Turn, parse_answer
+from meeting_agent.qa import Answer, Turn, parse_answer, refusal
+from meeting_agent.review import apply_review_checks
+from meeting_agent.safety import screen_question
 
 
 class MeetingService:
@@ -37,40 +40,39 @@ class MeetingService:
             raise SummarisationError("The model returned an empty summary. Try running again.")
         return summary
 
-    def extract_items(self, transcript: str) -> list[ProjectItem]:
-        """Return the transcript's actions, decisions, RAID items, dependencies and assumptions.
+    def extract_items(self, transcript: str, meeting_date: date | None = None) -> list[ProjectItem]:
+        """Return the meeting's Actions, Decisions, Risks, Issues, Dependencies and Assumptions.
 
-        Each item's source quote is checked against the transcript; items whose
-        quote cannot be found are kept but marked source_verified=False.
+        After the model replies, the application merges duplicates, checks each
+        item's evidence against the transcript, resolves relative due dates when
+        `meeting_date` is known, and sets needs_pm_review with reasons.
         """
         reply = self.provider.generate(
             system_prompt=EXTRACTION_SYSTEM_PROMPT,
             user_prompt=build_extraction_prompt(transcript),
         )
-        return verify_sources(parse_project_items(reply), transcript)
+        items = deduplicate(parse_project_items(reply))
+        return apply_review_checks(items, transcript, meeting_date)
 
     def answer_question(
         self, transcript: str, question: str, history: Sequence[Turn] = ()
     ) -> Answer:
         """Answer a question about the meeting from the transcript alone.
 
-        `history` holds earlier turns of the same conversation so follow-ups
-        ("who owns it?") make sense. The service keeps no state itself: each
-        interface (CLI, Teams, Copilot Studio) owns its own conversation.
+        Requests for secrets or external changes are refused in code without
+        calling the model. `history` holds earlier turns so follow-ups make
+        sense; the service keeps no state itself.
         """
         question = (question or "").strip()
         if not question:
             raise QuestionError("The question is empty.")
+
+        category = screen_question(question)
+        if category:
+            return refusal(question, category)
 
         reply = self.provider.generate(
             system_prompt=QA_SYSTEM_PROMPT,
             user_prompt=build_question_prompt(transcript, question, history),
         )
         return parse_answer(reply, question, transcript)
-
-    def find_missing_information(self, items: list[ProjectItem]) -> list[InformationGap]:
-        """Return what still needs chasing: missing owners, due dates, unverified sources.
-
-        Rule-based; makes no LLM call.
-        """
-        return find_missing_information(items)

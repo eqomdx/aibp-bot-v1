@@ -1,10 +1,16 @@
+"""MeetingService: prompts in, checked results out, for all three capabilities."""
+
+from datetime import date
+
 import pytest
 
 from meeting_agent.errors import ExtractionError, QuestionError, SummarisationError
 from meeting_agent.meeting_service import MeetingService
 from meeting_agent.prompts import (
     EXTRACTION_FORMAT,
+    EXTRACTION_INSTRUCTIONS,
     EXTRACTION_SYSTEM_PROMPT,
+    QA_INSTRUCTIONS,
     QA_SYSTEM_PROMPT,
     SUMMARY_FORMAT,
     SUMMARY_SYSTEM_PROMPT,
@@ -14,61 +20,56 @@ from meeting_agent.qa import Turn
 TRANSCRIPT = "Kat: We need to have the demo ready for Friday."
 
 
-def test_transcript_is_sent_to_provider(fake_provider):
+# --- Phase 1: summarise -------------------------------------------------------
+
+def test_summary_sends_transcript_and_summary_prompts(fake_provider):
     provider = fake_provider()
 
     MeetingService(provider).summarise(TRANSCRIPT)
 
     (call,) = provider.calls
-    assert TRANSCRIPT in call["user_prompt"]
-
-
-def test_correct_prompts_are_supplied(fake_provider):
-    provider = fake_provider()
-
-    MeetingService(provider).summarise(TRANSCRIPT)
-
-    call = provider.calls[0]
     assert call["system_prompt"] == SUMMARY_SYSTEM_PROMPT
+    assert TRANSCRIPT in call["user_prompt"]
     assert SUMMARY_FORMAT in call["user_prompt"]
     assert "None identified." in call["user_prompt"]
 
 
-def test_system_prompt_forbids_invention():
-    for word in ("people", "responsibilities", "deadlines", "decisions", "risks", "issues"):
-        assert f"- {word}" in SUMMARY_SYSTEM_PROMPT
-    assert "actually agreed" in SUMMARY_SYSTEM_PROMPT
-    assert "ambiguity" in SUMMARY_SYSTEM_PROMPT
+def test_summary_prompt_forbids_invention_and_distinguishes_agreement():
+    for word in ("people", "responsibilities", "dates", "deadlines", "decisions", "risks",
+                 "issues", "project facts", "motives", "outcomes"):
+        assert word in SUMMARY_SYSTEM_PROMPT
+    assert "A suggestion" in SUMMARY_SYSTEM_PROMPT and "is not a decision" in SUMMARY_SYSTEM_PROMPT
+    assert "Preserve uncertainty" in SUMMARY_SYSTEM_PROMPT
 
 
-def test_generated_response_is_returned(fake_provider):
+def test_summary_is_returned_trimmed(fake_provider):
     provider = fake_provider(reply="\n# Meeting Summary\n\n## Overview\nDemo planning.\n\n")
 
-    summary = MeetingService(provider).summarise(TRANSCRIPT)
-
-    assert summary == "# Meeting Summary\n\n## Overview\nDemo planning."
+    assert MeetingService(provider).summarise(TRANSCRIPT) == "# Meeting Summary\n\n## Overview\nDemo planning."
 
 
-@pytest.mark.parametrize("reply", ["", "  \n\t", None], ids=["empty", "whitespace", "none"])
-def test_empty_provider_response_fails(fake_provider, reply):
-    service = MeetingService(fake_provider(reply=reply))
-
+@pytest.mark.parametrize("reply", ["", "  \n\t", None])
+def test_empty_summary_is_rejected(fake_provider, reply):
     with pytest.raises(SummarisationError, match="empty summary"):
-        service.summarise(TRANSCRIPT)
+        MeetingService(fake_provider(reply=reply)).summarise(TRANSCRIPT)
 
 
-# --- Phase 2: extract_items ----------------------------------------------
+# --- Phase 2: extract_items ---------------------------------------------------
 
 ITEMS_REPLY = """{"items": [
-  {"type": "action", "description": "Have the demo ready.", "owner": null,
-   "due_date": "Friday", "source": "We need to have the demo ready for Friday.",
-   "confidence": "medium"},
-  {"type": "decision", "description": "Kat owns the demo.", "owner": "Kat",
-   "due_date": null, "source": "Kat agreed to own the demo.", "confidence": "high"}
+  {"type": "Action", "description": "Have the demo ready.", "owner": "Not stated", "due_date": "Friday",
+   "source": {"speaker": "Kat", "quote": "We need to have the demo ready for Friday.", "timestamp": null},
+   "confidence": "Medium", "needs_pm_review": false, "review_reason": null},
+  {"type": "Action", "description": "Have the demo ready.", "owner": "Not stated", "due_date": "Friday",
+   "source": {"speaker": "Kat", "quote": "We need to have the demo ready for Friday.", "timestamp": null},
+   "confidence": "Medium", "needs_pm_review": false, "review_reason": null},
+  {"type": "Decision", "description": "Kat owns the demo.", "owner": "Kat", "due_date": "Not stated",
+   "source": {"speaker": "Kat", "quote": "Kat agreed to own the demo.", "timestamp": null},
+   "confidence": "High", "needs_pm_review": false, "review_reason": null}
 ]}"""
 
 
-def test_extract_items_sends_transcript_with_extraction_prompts(fake_provider):
+def test_extraction_sends_transcript_and_extraction_prompts(fake_provider):
     provider = fake_provider(items_reply=ITEMS_REPLY)
 
     MeetingService(provider).extract_items(TRANSCRIPT)
@@ -79,42 +80,36 @@ def test_extract_items_sends_transcript_with_extraction_prompts(fake_provider):
     assert EXTRACTION_FORMAT in call["user_prompt"]
 
 
-def test_extract_items_returns_parsed_items(fake_provider):
-    items = MeetingService(fake_provider(items_reply=ITEMS_REPLY)).extract_items(TRANSCRIPT)
+def test_extraction_deduplicates_checks_and_flags(fake_provider):
+    items = MeetingService(fake_provider(items_reply=ITEMS_REPLY)).extract_items(TRANSCRIPT, date(2026, 9, 23))
 
-    assert [(i.type, i.owner, i.due_date) for i in items] == [
-        ("action", None, "Friday"),
-        ("decision", "Kat", None),
-    ]
-
-
-def test_extract_items_flags_sources_missing_from_transcript(fake_provider):
-    items = MeetingService(fake_provider(items_reply=ITEMS_REPLY)).extract_items(TRANSCRIPT)
-
-    assert [i.source_verified for i in items] == [True, False]
+    action, decision = items
+    assert action.owner == "Not stated"
+    assert action.due_date_resolved == "2026-09-25"
+    assert action.review_reasons == ("No owner stated.",)
+    assert decision.source.verified is False
+    assert "Source quote not found in the transcript." in decision.review_reasons
 
 
-def test_extract_items_rejects_unparseable_reply(fake_provider):
-    service = MeetingService(fake_provider(items_reply="I could not find any items."))
+def test_extraction_prompt_covers_the_classification_rules():
+    for phrase in ("Risk: something that might go wrong", "Issue: a problem that exists now",
+                   "Assumption: something treated as true", "Tentative wording", "Corrections:",
+                   "Duplicates:", "never invent timestamps", "Never infer an owner"):
+        assert phrase in EXTRACTION_INSTRUCTIONS
 
+
+def test_unparseable_extraction_reply_is_rejected(fake_provider):
     with pytest.raises(ExtractionError, match="not valid JSON"):
-        service.extract_items(TRANSCRIPT)
+        MeetingService(fake_provider(items_reply="I could not find any items.")).extract_items(TRANSCRIPT)
 
 
-def test_extraction_prompt_forbids_invention():
-    for word in ("owners", "deadlines", "decisions", "dependencies", "assumptions"):
-        assert f"- {word}" in EXTRACTION_SYSTEM_PROMPT
-    assert "actually agreed" in EXTRACTION_SYSTEM_PROMPT
+# --- Phase 3: answer_question -------------------------------------------------
+
+ANSWER_REPLY = """{"category": "answered", "answer": "The demo is due Friday; no owner was named.",
+ "sources": [{"speaker": "Kat", "quote": "We need to have the demo ready for Friday.", "timestamp": null}]}"""
 
 
-# --- Phase 3: answer_question --------------------------------------------
-
-ANSWER_REPLY = """{"answer": "The demo is due Friday; no owner was named.",
- "found_in_transcript": true,
- "sources": ["We need to have the demo ready for Friday."]}"""
-
-
-def test_answer_question_sends_transcript_question_and_qa_prompt(fake_provider):
+def test_question_is_sent_with_transcript_and_qa_prompt(fake_provider):
     provider = fake_provider(answer_reply=ANSWER_REPLY)
 
     MeetingService(provider).answer_question(TRANSCRIPT, "  Who owns the demo?  ")
@@ -125,21 +120,18 @@ def test_answer_question_sends_transcript_question_and_qa_prompt(fake_provider):
     assert "<question>\nWho owns the demo?\n</question>" in call["user_prompt"]
 
 
-def test_answer_question_returns_verified_answer(fake_provider):
-    answer = MeetingService(fake_provider(answer_reply=ANSWER_REPLY)).answer_question(
-        TRANSCRIPT, "Who owns the demo?"
-    )
+def test_answer_is_returned_with_checked_sources(fake_provider):
+    answer = MeetingService(fake_provider(answer_reply=ANSWER_REPLY)).answer_question(TRANSCRIPT, "Who owns the demo?")
 
     assert answer.question == "Who owns the demo?"
-    assert answer.found_in_transcript
+    assert answer.category == "answered"
     assert answer.is_supported
 
 
-def test_answer_question_passes_history(fake_provider):
+def test_history_is_passed_for_follow_ups(fake_provider):
     provider = fake_provider(answer_reply=ANSWER_REPLY)
-    history = [Turn("When is the demo?", "Friday.")]
 
-    MeetingService(provider).answer_question(TRANSCRIPT, "Who owns it?", history)
+    MeetingService(provider).answer_question(TRANSCRIPT, "Who owns it?", [Turn("When is the demo?", "Friday.")])
 
     assert "Q: When is the demo?\nA: Friday." in provider.calls[0]["user_prompt"]
 
@@ -154,8 +146,6 @@ def test_empty_question_is_rejected_without_calling_provider(fake_provider, ques
     assert provider.calls == []
 
 
-def test_qa_prompt_forbids_invention_and_guessing():
-    for word in ("owners", "deadlines", "decisions"):
-        assert f"- {word}" in QA_SYSTEM_PROMPT
-    assert "say so plainly" in QA_SYSTEM_PROMPT
-    assert "actually agreed" in QA_SYSTEM_PROMPT
+def test_qa_prompt_requires_grounding():
+    assert "Use only the supplied transcript" in QA_SYSTEM_PROMPT
+    assert "not_in_transcript" in QA_INSTRUCTIONS

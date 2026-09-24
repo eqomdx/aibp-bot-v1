@@ -1,89 +1,105 @@
 {
   "transcript": "transcript.md",
+  "meeting_date": null,
   "items": [
     {
-      "type": "action",
-      "description": "Have the demo ready.",
-      "owner": null,
+      "type": "Action",
+      "description": "Have the demo ready, showing the working end-to-end flow.",
+      "owner": "Not stated",
       "due_date": "Friday",
-      "source": "We need to have the demo ready for Friday.",
-      "confidence": "medium",
-      "source_verified": true
+      "due_date_resolved": null,
+      "source": {
+        "speaker": "Kat",
+        "quote": "We need to have the demo ready for Friday.",
+        "timestamp": null,
+        "verified": true
+      },
+      "confidence": "Medium",
+      "needs_pm_review": true,
+      "review_reasons": [
+        "No owner stated.",
+        "Due date 'Friday' is relative, and the meeting date is unknown."
+      ]
     },
     {
-      "type": "action",
-      "description": "Investigate whether the system can detect a transcript automatically and let Kazim know the findings.",
+      "type": "Action",
+      "description": "Investigate whether the system can detect a transcript automatically and tell Kazim the findings.",
       "owner": "Annie",
-      "due_date": null,
-      "source": "I'll investigate whether the system can detect a transcript automatically and let Kazim know what I find.",
-      "confidence": "high",
-      "source_verified": true
+      "due_date": "Not stated",
+      "due_date_resolved": null,
+      "source": {
+        "speaker": "Annie",
+        "quote": "I'll investigate whether the system can detect a transcript automatically and let Kazim know what I find.",
+        "timestamp": null,
+        "verified": true
+      },
+      "confidence": "High",
+      "needs_pm_review": false,
+      "review_reasons": []
     },
     {
-      "type": "action",
+      "type": "Action",
       "description": "Ask Chloe for a sample project transcript; if she has nothing suitable, create an example.",
       "owner": "Izzy",
-      "due_date": null,
-      "source": "I'll ask Chloe for one. If she doesn't have anything suitable, I'll create an example.",
-      "confidence": "high",
-      "source_verified": true
+      "due_date": "Not stated",
+      "due_date_resolved": null,
+      "source": {
+        "speaker": "Izzy",
+        "quote": "I'll ask Chloe for one. If she doesn't have anything suitable, I'll create an example.",
+        "timestamp": null,
+        "verified": true
+      },
+      "confidence": "High",
+      "needs_pm_review": false,
+      "review_reasons": []
     },
     {
-      "type": "decision",
+      "type": "Decision",
       "description": "Use SharePoint for RAID data in the first version; Planner may be revisited later.",
-      "owner": null,
-      "due_date": null,
-      "source": "Yes, SharePoint makes sense for the first version.",
-      "confidence": "medium",
-      "source_verified": true
+      "owner": "Not stated",
+      "due_date": "Not stated",
+      "due_date_resolved": null,
+      "source": {
+        "speaker": "Izzy",
+        "quote": "Yes, SharePoint makes sense for the first version.",
+        "timestamp": null,
+        "verified": true
+      },
+      "confidence": "High",
+      "needs_pm_review": false,
+      "review_reasons": []
     },
     {
-      "type": "issue",
+      "type": "Issue",
       "description": "The team does not yet have a sample project transcript.",
-      "owner": null,
-      "due_date": null,
-      "source": "we still don't have the sample project transcript.",
-      "confidence": "high",
-      "source_verified": true
+      "owner": "Not stated",
+      "due_date": "Not stated",
+      "due_date_resolved": null,
+      "source": {
+        "speaker": "Kat",
+        "quote": "we still don't have the sample project transcript.",
+        "timestamp": null,
+        "verified": true
+      },
+      "confidence": "High",
+      "needs_pm_review": false,
+      "review_reasons": []
     },
     {
-      "type": "dependency",
+      "type": "Dependency",
       "description": "Getting a sample transcript depends on whether Chloe has something suitable.",
       "owner": "Izzy",
-      "due_date": null,
-      "source": "If she doesn't have anything suitable, I'll create an example.",
-      "confidence": "medium",
-      "source_verified": true
-    }
-  ],
-  "missing_information": [
-    {
-      "item_number": 1,
-      "item_type": "action",
-      "item_description": "Have the demo ready.",
-      "gap": "owner",
-      "message": "No owner stated."
-    },
-    {
-      "item_number": 2,
-      "item_type": "action",
-      "item_description": "Investigate whether the system can detect a transcript automatically and let Kazim know the findings.",
-      "gap": "due_date",
-      "message": "No due date stated."
-    },
-    {
-      "item_number": 3,
-      "item_type": "action",
-      "item_description": "Ask Chloe for a sample project transcript; if she has nothing suitable, create an example.",
-      "gap": "due_date",
-      "message": "No due date stated."
-    },
-    {
-      "item_number": 5,
-      "item_type": "issue",
-      "item_description": "The team does not yet have a sample project transcript.",
-      "gap": "owner",
-      "message": "No owner stated."
+      "due_date": "Not stated",
+      "due_date_resolved": null,
+      "source": {
+        "speaker": "Izzy",
+        "quote": "If she doesn't have anything suitable, I'll create an example.",
+        "timestamp": null,
+        "verified": true
+      },
+      "confidence": "Medium",
+      "needs_pm_review": false,
+      "review_reasons": []
     }
   ]
 }

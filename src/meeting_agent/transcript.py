@@ -4,6 +4,8 @@ Knows nothing about LLMs. Later phases (multiple meetings, a knowledge
 store) should reuse load_transcript rather than reading files themselves.
 """
 
+import re
+from datetime import date
 from pathlib import Path
 
 from meeting_agent.errors import TranscriptError
@@ -48,3 +50,21 @@ def validate_transcript(text: str) -> None:
     ]
     if not content_lines:
         raise TranscriptError("Transcript contains no usable text.")
+
+
+_MEETING_DATE = re.compile(
+    r"^\W*(?:meeting\s+)?date[\s*_]*[:\-][\s*_]*(\d{4}-\d{2}-\d{2})\b", re.IGNORECASE | re.MULTILINE
+)
+_HEADER_LINES = 15
+
+
+def detect_meeting_date(text: str) -> date | None:
+    """Find a 'Date: YYYY-MM-DD' line near the top of the transcript, if there is one."""
+    header = "\n".join(text.splitlines()[:_HEADER_LINES])
+    match = _MEETING_DATE.search(header)
+    if not match:
+        return None
+    try:
+        return date.fromisoformat(match.group(1))
+    except ValueError:
+        return None

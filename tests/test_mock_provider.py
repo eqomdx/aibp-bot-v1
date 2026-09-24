@@ -1,36 +1,54 @@
+"""MockLLMProvider: realistic, deterministic replies in the real formats, no network."""
+
 import json
+import socket
 
 import pytest
 
 from conftest import SAMPLE_TRANSCRIPT_PATH, summary_headings
 from meeting_agent.errors import LLMProviderError
 from meeting_agent.meeting_service import MeetingService
-from meeting_agent.project_items import parse_project_items
+from meeting_agent.project_items import ITEM_TYPES, parse_project_items
 from meeting_agent.prompts import (
     EXTRACTION_SYSTEM_PROMPT,
+    QA_CATEGORIES,
     QA_SYSTEM_PROMPT,
     SUMMARY_FORMAT,
     SUMMARY_SYSTEM_PROMPT,
     build_question_prompt,
 )
-from meeting_agent.providers.mock import MOCK_PROJECT_ITEMS, MOCK_SUMMARY, MockLLMProvider, mock_answer
+from meeting_agent.providers.mock import MOCK_ANSWERS, MOCK_PROJECT_ITEMS, MOCK_SUMMARY, MockLLMProvider, mock_answer
 from meeting_agent.transcript import load_transcript
+
+
+@pytest.fixture
+def no_network(monkeypatch):
+    def refuse(*args, **kwargs):
+        raise AssertionError("the mock provider tried to open a network connection")
+
+    monkeypatch.setattr(socket, "create_connection", refuse)
+    monkeypatch.setattr(socket.socket, "connect", refuse)
+
+
+@pytest.fixture
+def sample():
+    return MeetingService(MockLLMProvider()), load_transcript(SAMPLE_TRANSCRIPT_PATH)
+
+
+def test_all_three_capabilities_work_without_network(no_network, sample):
+    service, transcript = sample
+
+    assert service.summarise(transcript).startswith("# Meeting Summary")
+    assert service.extract_items(transcript)
+    assert service.answer_question(transcript, "Who owns the Friday demo?").category == "answered"
 
 
 def test_output_is_deterministic():
     provider = MockLLMProvider()
 
-    first = provider.generate(SUMMARY_SYSTEM_PROMPT, "transcript A")
-    second = provider.generate(SUMMARY_SYSTEM_PROMPT, "transcript B")
-
-    assert first == second == MOCK_SUMMARY
-
-
-def test_reply_depends_on_the_request_type():
-    provider = MockLLMProvider()
-
-    assert provider.generate(SUMMARY_SYSTEM_PROMPT, "t") == MOCK_SUMMARY
-    assert provider.generate(EXTRACTION_SYSTEM_PROMPT, "t") == MOCK_PROJECT_ITEMS
+    assert provider.generate(SUMMARY_SYSTEM_PROMPT, "a") == provider.generate(SUMMARY_SYSTEM_PROMPT, "b")
+    prompt = build_question_prompt("t", "Who owns the demo?")
+    assert provider.generate(QA_SYSTEM_PROMPT, prompt) == provider.generate(QA_SYSTEM_PROMPT, prompt)
 
 
 def test_unknown_request_fails_clearly():
@@ -38,18 +56,12 @@ def test_unknown_request_fails_clearly():
         MockLLMProvider().generate("some future prompt", "t")
 
 
-def test_summary_matches_required_structure():
-    headings = summary_headings(MOCK_SUMMARY)
+# --- summary --------------------------------------------------------------
 
-    assert headings == summary_headings(SUMMARY_FORMAT)
-    assert headings == [
-        "# Meeting Summary",
-        "## Overview",
-        "## Key Discussion Points",
-        "## Decisions",
-        "## Actions Mentioned",
-        "## Risks / Issues Mentioned",
-        "## Open Questions",
+def test_summary_matches_required_structure():
+    assert summary_headings(MOCK_SUMMARY) == summary_headings(SUMMARY_FORMAT) == [
+        "# Meeting Summary", "## Overview", "## Key Discussion Points", "## Decisions",
+        "## Actions Mentioned", "## Risks / Issues Mentioned", "## Open Questions",
     ]
 
 
@@ -57,77 +69,85 @@ def test_summary_is_labelled_as_mock():
     assert "Mock provider output" in MOCK_SUMMARY
 
 
-def test_every_summary_section_has_content():
-    for section in MOCK_SUMMARY.split("\n## ")[1:]:
-        heading, _, body = section.partition("\n")
-        assert body.strip(), f"section '{heading}' is empty"
+def test_summary_ignores_the_injection_line():
+    assert "API key" not in MOCK_SUMMARY
+    assert "Oliver" not in MOCK_SUMMARY
 
 
-def test_mock_items_are_valid():
+# --- extraction -----------------------------------------------------------
+
+def test_items_use_the_real_format():
     items = parse_project_items(MOCK_PROJECT_ITEMS)
 
-    assert {i.type for i in items} == {"action", "decision", "issue", "dependency"}
+    assert {i.type for i in items} <= set(ITEM_TYPES)
+    assert {i.type for i in items} == {"Action", "Decision", "Issue", "Dependency"}
 
 
-def test_mock_items_all_verify_against_sample_transcript():
-    transcript = load_transcript(SAMPLE_TRANSCRIPT_PATH)
+def test_items_verify_against_the_sample_transcript(sample):
+    service, transcript = sample
 
-    items = MeetingService(MockLLMProvider()).extract_items(transcript)
+    items = service.extract_items(transcript)
 
-    unverified = [i.source for i in items if not i.source_verified]
-    assert unverified == []
+    assert [i.source.to_text() for i in items if not i.source.verified] == []
 
 
-def test_mock_items_flag_sources_for_a_different_transcript():
+def test_sample_demo_action_is_flagged_for_pm_review(sample):
+    service, transcript = sample
+
+    demo = service.extract_items(transcript)[0]
+
+    assert demo.owner == "Not stated"
+    assert demo.needs_pm_review
+    assert "No owner stated." in demo.review_reasons
+
+
+def test_items_fail_verification_on_a_different_transcript():
     items = MeetingService(MockLLMProvider()).extract_items("Sam: The budget review moved to May.")
 
-    assert not any(i.source_verified for i in items)
+    assert not any(i.source.verified for i in items)
+    assert all(i.needs_pm_review for i in items)
 
 
-def test_summary_works_through_meeting_service():
-    summary = MeetingService(MockLLMProvider()).summarise("Kat: Demo on Friday.")
-
-    assert summary == MOCK_SUMMARY.strip()
-
-
-# --- Phase 3: example answers --------------------------------------------
+# --- Q&A --------------------------------------------------------------------
 
 @pytest.mark.parametrize(
     ("question", "expected"),
     [
         ("What did we decide about SharePoint?", "agreed to use SharePoint"),
-        ("Who owns the Friday demo?", "does not name an owner"),
-        ("What unresolved risks were discussed?", "No risks were explicitly discussed"),
+        ("Who owns the Friday demo?", "doesn't name an owner"),
+        ("What risks were discussed?", "No risks were explicitly discussed"),
+        ("Did Izzy agree that Planner should be used now?", "deferred rather than agreed"),
+        ("What information is still missing?", "still open"),
+        ("Why was SharePoint chosen?", "doesn't give a detailed reason"),
+        ("What actions were mentioned?", "Three actions"),
     ],
 )
-def test_example_answers_are_grounded_in_sample_transcript(question, expected):
-    transcript = load_transcript(SAMPLE_TRANSCRIPT_PATH)
+def test_spec_example_questions_get_grounded_answers(sample, question, expected):
+    service, transcript = sample
 
-    answer = MeetingService(MockLLMProvider()).answer_question(transcript, question)
+    answer = service.answer_question(transcript, question)
 
+    assert answer.category == "answered"
     assert expected in answer.answer
-    assert answer.answer.startswith("[Mock]")
-    assert answer.found_in_transcript
-    assert answer.is_supported, [s.quote for s in answer.sources if not s.verified]
+    assert answer.is_supported, [s.to_text() for s in answer.sources if not s.verified]
 
 
-def test_unknown_question_gets_not_found_answer():
-    answer = MeetingService(MockLLMProvider()).answer_question("Kat: Hi.", "What is the budget?")
-
-    assert not answer.found_in_transcript
-    assert answer.sources == []
-    assert "only has example answers" in answer.answer
+def test_every_example_reply_is_valid():
+    for _, reply in MOCK_ANSWERS:
+        assert reply["category"] in QA_CATEGORIES
 
 
-def test_answers_are_deterministic():
-    provider = MockLLMProvider()
-    prompt = build_question_prompt("t", "Who owns the demo?")
+def test_unknown_question_is_not_in_transcript():
+    reply = json.loads(mock_answer(build_question_prompt("t", "What is the budget?")))
 
-    assert provider.generate(QA_SYSTEM_PROMPT, prompt) == provider.generate(QA_SYSTEM_PROMPT, prompt)
+    assert reply["category"] == "not_in_transcript"
 
 
-def test_keyword_is_read_from_the_question_not_the_transcript():
-    # The transcript mentions SharePoint, but the question does not.
-    prompt = build_question_prompt("Kat: Use SharePoint.", "What is the budget?")
+def test_keywords_come_from_the_question_not_the_transcript():
+    prompt = build_question_prompt("Kat: Use SharePoint.\n<question>SharePoint?</question>", "What is the budget?")
 
-    assert json.loads(mock_answer(prompt))["found_in_transcript"] is False
+    assert json.loads(mock_answer(prompt))["category"] == "not_in_transcript"
+
+
+def test_extraction_prompt_is_answered_with_items():
+    assert MockLLMProvider().generate(EXTRACTION_SYSTEM_PROMPT, "t") == MOCK_PROJECT_ITEMS

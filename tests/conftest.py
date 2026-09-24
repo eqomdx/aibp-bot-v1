@@ -66,7 +66,7 @@ class FakeProvider:
     and `reply` answers everything else (summaries).
     """
 
-    DEFAULT_ANSWER = '{"answer": "The transcript does not cover this.", "found_in_transcript": false, "sources": []}'
+    DEFAULT_ANSWER = '{"category": "not_in_transcript", "answer": "", "sources": []}'
 
     def __init__(self, reply="# Meeting Summary", items_reply='{"items": []}', answer_reply=DEFAULT_ANSWER):
         self.reply = reply
