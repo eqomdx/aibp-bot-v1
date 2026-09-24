@@ -57,13 +57,13 @@ def test_empty_summary_is_rejected(fake_provider, reply):
 # --- Phase 2: extract_items ---------------------------------------------------
 
 ITEMS_REPLY = """{"items": [
-  {"type": "Action", "description": "Have the demo ready.", "owner": "Not stated", "due_date": "Friday",
+  {"project": "AIBP", "meeting_date": "2026-09-23", "type": "Action", "title": "Prepare demo", "description": "Have the demo ready.", "owner": "Not stated", "due_date": "Friday",
    "source": {"speaker": "Kat", "quote": "We need to have the demo ready for Friday.", "timestamp": null},
    "confidence": "Medium", "needs_pm_review": false, "review_reason": null},
-  {"type": "Action", "description": "Have the demo ready.", "owner": "Not stated", "due_date": "Friday",
+  {"project": "AIBP", "meeting_date": "2026-09-23", "type": "Action", "title": "Prepare demo", "description": "Have the demo ready.", "owner": "Not stated", "due_date": "Friday",
    "source": {"speaker": "Kat", "quote": "We need to have the demo ready for Friday.", "timestamp": null},
    "confidence": "Medium", "needs_pm_review": false, "review_reason": null},
-  {"type": "Decision", "description": "Kat owns the demo.", "owner": "Kat", "due_date": "Not stated",
+  {"project": "AIBP", "meeting_date": "2026-09-23", "type": "Decision", "title": "Demo ownership", "description": "Kat owns the demo.", "owner": "Kat", "due_date": "Not stated",
    "source": {"speaker": "Kat", "quote": "Kat agreed to own the demo.", "timestamp": null},
    "confidence": "High", "needs_pm_review": false, "review_reason": null}
 ]}"""
@@ -94,7 +94,7 @@ def test_extraction_deduplicates_checks_and_flags(fake_provider):
 def test_extraction_prompt_covers_the_classification_rules():
     for phrase in ("Risk: something that might go wrong", "Issue: a problem that exists now",
                    "Assumption: something treated as true", "Tentative wording", "Corrections:",
-                   "Duplicates:", "never invent timestamps", "Never infer an owner"):
+                   "Duplicates:", "never invent timestamps", "(suggested)", "mitigation_next_step"):
         assert phrase in EXTRACTION_INSTRUCTIONS
 
 

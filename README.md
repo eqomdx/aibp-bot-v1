@@ -64,6 +64,7 @@ Options:
 
 - `-o folder` writes output files somewhere else. The default is the transcript's folder.
 - `--meeting-date YYYY-MM-DD` gives the meeting date, which is used to work out dates like "tomorrow". Without it, the app looks for a `Date: YYYY-MM-DD` line near the top of the transcript.
+- `--project "Project Name"` applies the project name to every extracted item and regenerates sequential record IDs such as `Project Name-1`, `Project Name-2`.
 
 Expected problems print a one-line `Error: …` and exit with code 1. Nothing is written if any step fails.
 
@@ -75,26 +76,37 @@ The model returns JSON. The app checks it and writes it as data (`project_items.
 
 ```json
 {
+  "record_id": "AIBP-1",
+  "number": 1,
+  "project": "AIBP",
+  "meeting_date": "2026-09-24",
   "type": "Action",
+  "title": "Prepare Friday demo",
   "description": "Have the demo ready, showing the working end-to-end flow.",
-  "owner": "Not stated",
-  "due_date": "Friday",
-  "due_date_resolved": null,
-  "source": {"speaker": "Kat", "quote": "We need to have the demo ready for Friday.", "timestamp": null, "verified": true},
-  "confidence": "Medium",
-  "needs_pm_review": true,
-  "review_reasons": ["No owner stated.", "Due date 'Friday' is relative, and the meeting date is unknown."]
+  "owner": null,
+  "due_date": "2026-09-25",
+  "status": "Open",
+  "priority": null,
+  "impact": null,
+  "likelihood": null,
+  "mitigation_next_step": null,
+  "decision_rationale": null,
+  "source_evidence": "Kat: \"We need to have the demo ready for Friday.\"",
+  "review_flag": "Missing",
+  "reviewer_notes": null
 }
 ```
 
-- **Type** is one of Action, Decision, Risk, Issue, Dependency or Assumption. Any other value is rejected.
-- **Confidence** is High, Medium or Low.
-- **Owner** is filled in only when the transcript names someone. Otherwise it is `Not stated`, and the app never guesses one.
-- **Due date** keeps the transcript's own words. The app turns "today", "tomorrow" or a weekday into a date only when the meeting date is known and the wording has one clear meaning. "Next Friday", "next week", or a missing meeting date are left as said and flagged.
-- **Source** gives the speaker, a short exact quote, and a timestamp if the transcript has one. The app checks all three against the transcript, so a made-up quote, speaker or timestamp is flagged.
-- **Needs PM review** depends on the item type. An Action with no owner is flagged; a Decision with no owner is normal. Low confidence, a source that can't be checked, and a date that can't be worked out are always flagged. The model can also flag an item and give its reason, for example ambiguity, a correction, or a deadline that seems necessary. The rules table is `REQUIRED_FIELDS` in `review.py`.
-- **Duplicates** are merged when two items share a type and have the same description or quote.
-- **The prompt also covers:** risk vs issue, decision vs assumption, tentative wording (no confirmed owner), and corrections (only the corrected item is kept).
+The public record now includes the same downstream fields as the original RAID JSON: `record_id`, `number`, `project`, `meeting_date`, `title`, `status`, `priority`, `impact`, `likelihood`, `mitigation_next_step`, `decision_rationale`, `source_evidence`, `review_flag`, and `reviewer_notes`. The file also retains local QA extensions such as structured source verification, confidence and human-readable review reasons.
+
+- **Record ID / number** are generated in code after de-duplication, so numbering is always sequential. If no project is known the ID uses `null-1`, `null-2`, etc.; supplying `--project` regenerates them with the real prefix.
+- **Owner** is explicit when stated. A defensible inferred owner may be returned as `Name (suggested)` and is always marked `Inferred` for PM review; it is never presented as certain.
+- **Due date** is exported as an ISO date only when it is explicit or can safely be resolved from a trusted meeting date. The original wording is retained in the local `due_date_text` extension.
+- **Status** defaults to `Open` unless the transcript clearly supports `Closed`, `Blocked`, `In Progress` or `Monitoring`.
+- **Priority, impact, likelihood and mitigation / next step** are never invented. They are populated only when stated or when a clear agreed rule applies.
+- **Review Flag** uses `None`, `Missing`, `Inferred` or `Ambiguous`, with ambiguity taking precedence. Missing project/date or an Action owner is flagged; suggested owners are `Inferred`; conflicting or unverifiable evidence is `Ambiguous`.
+- **Source evidence** is backed by the existing source-verification layer, which checks quotes, speakers and timestamps against the transcript.
+- **Duplicates** are merged when two items share a type and have the same description or quote, then record IDs are renumbered.
 
 ### Chat
 ```text

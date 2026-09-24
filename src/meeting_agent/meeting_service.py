@@ -40,7 +40,9 @@ class MeetingService:
             raise SummarisationError("The model returned an empty summary. Try running again.")
         return summary
 
-    def extract_items(self, transcript: str, meeting_date: date | None = None) -> list[ProjectItem]:
+    def extract_items(
+        self, transcript: str, meeting_date: date | None = None, project: str | None = None
+    ) -> list[ProjectItem]:
         """Return the meeting's Actions, Decisions, Risks, Issues, Dependencies and Assumptions.
 
         After the model replies, the application merges duplicates, checks each
@@ -52,7 +54,7 @@ class MeetingService:
             user_prompt=build_extraction_prompt(transcript),
         )
         items = deduplicate(parse_project_items(reply))
-        return apply_review_checks(items, transcript, meeting_date)
+        return apply_review_checks(items, transcript, meeting_date, project)
 
     def answer_question(
         self, transcript: str, question: str, history: Sequence[Turn] = ()

@@ -22,7 +22,7 @@ from meeting_agent.app import build_service, use_utf8_console
 from meeting_agent.config import get_provider_name, load_environment
 from meeting_agent.errors import MeetingAgentError
 from meeting_agent.output import save_json, save_markdown
-from meeting_agent.project_items import ProjectItem, items_to_markdown
+from meeting_agent.project_items import ProjectItem, build_extraction_summary, items_to_markdown
 from meeting_agent.transcript import detect_meeting_date, load_transcript
 
 DEFAULT_TRANSCRIPT = "transcript.md"
@@ -39,7 +39,9 @@ class MeetingOutputs:
     summary: str | None = None
     items: list[ProjectItem] | None = None
     items_markdown: str | None = None
+    extraction_summary: str | None = None
     meeting_date: date | None = None
+    project: str | None = None
     files: list[Path] = field(default_factory=list)
 
 
@@ -72,6 +74,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             command.add_argument("--meeting-date", type=_iso_date,
                                  help="Meeting date (YYYY-MM-DD), used to resolve 'tomorrow' or 'Friday'. "
                                       "Default: a 'Date:' line at the top of the transcript, if any.")
+            command.add_argument("--project",
+                                 help="Project name to apply to every item and use for record IDs.")
 
     args = parser.parse_args(argv)
     args.command = ALIASES.get(args.command, args.command)
@@ -84,24 +88,31 @@ def run(
     output_dir: Path,
     provider_name: str,
     meeting_date: date | None = None,
+    project: str | None = None,
 ) -> MeetingOutputs:
     """Run summarise, extract or all for one transcript. Nothing is written if any step fails."""
     transcript = load_transcript(transcript_path)
     service = build_service(provider_name)
-    outputs = MeetingOutputs(meeting_date=meeting_date or detect_meeting_date(transcript))
+    outputs = MeetingOutputs(
+        meeting_date=meeting_date or detect_meeting_date(transcript),
+        project=(project or "").strip() or None,
+    )
 
     if command in ("summarise", "all"):
         outputs.summary = service.summarise(transcript)
     if command in ("extract", "all"):
-        outputs.items = service.extract_items(transcript, outputs.meeting_date)
+        outputs.items = service.extract_items(transcript, outputs.meeting_date, outputs.project)
         outputs.items_markdown = items_to_markdown(outputs.items)
+        outputs.extraction_summary = build_extraction_summary(outputs.items)
 
     if outputs.summary is not None:
         outputs.files.append(save_markdown(output_dir / SUMMARY_FILENAME, outputs.summary))
     if outputs.items is not None:
         document = {
+            "meetingSummary": outputs.extraction_summary,
             "transcript": transcript_path.name,
             "meeting_date": outputs.meeting_date.isoformat() if outputs.meeting_date else None,
+            "project": outputs.project,
             "items": [item.to_dict() for item in outputs.items],
         }
         outputs.files.append(save_json(output_dir / ITEMS_JSON_FILENAME, document))
@@ -122,8 +133,10 @@ def main(argv: list[str] | None = None, read=input) -> int:
     try:
         provider_name = get_provider_name()
         print(f"Processing {transcript_path} with the '{provider_name}' provider ...", flush=True)
-        outputs = run(args.command, transcript_path, output_dir, provider_name,
-                      getattr(args, "meeting_date", None))
+        outputs = run(
+            args.command, transcript_path, output_dir, provider_name,
+            getattr(args, "meeting_date", None), getattr(args, "project", None),
+        )
     except MeetingAgentError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1

@@ -1,13 +1,29 @@
 {
+  "meetingSummary": "Extracted 6 project items (3 Actions, 1 Decision, 1 Issue, 1 Dependency) covering Prepare Friday demo; Investigate transcript detection; Obtain sample project transcript. 6 have an outstanding Review Flag.",
   "transcript": "transcript.md",
   "meeting_date": null,
+  "project": null,
   "items": [
     {
+      "record_id": "null-1",
+      "number": 1,
+      "project": null,
+      "meeting_date": null,
       "type": "Action",
+      "title": "Prepare Friday demo",
       "description": "Have the demo ready, showing the working end-to-end flow.",
-      "owner": "Not stated",
-      "due_date": "Friday",
-      "due_date_resolved": null,
+      "owner": null,
+      "due_date": null,
+      "status": "Open",
+      "priority": null,
+      "impact": null,
+      "likelihood": null,
+      "mitigation_next_step": null,
+      "decision_rationale": null,
+      "source_evidence": "Kat: \"We need to have the demo ready for Friday.\"",
+      "review_flag": "Ambiguous",
+      "reviewer_notes": null,
+      "due_date_text": "Friday",
       "source": {
         "speaker": "Kat",
         "quote": "We need to have the demo ready for Friday.",
@@ -18,15 +34,31 @@
       "needs_pm_review": true,
       "review_reasons": [
         "No owner stated.",
+        "Project is missing.",
+        "Meeting date is missing.",
         "Due date 'Friday' is relative, and the meeting date is unknown."
       ]
     },
     {
+      "record_id": "null-2",
+      "number": 2,
+      "project": null,
+      "meeting_date": null,
       "type": "Action",
+      "title": "Investigate transcript detection",
       "description": "Investigate whether the system can detect a transcript automatically and tell Kazim the findings.",
       "owner": "Annie",
-      "due_date": "Not stated",
-      "due_date_resolved": null,
+      "due_date": null,
+      "status": "Open",
+      "priority": null,
+      "impact": null,
+      "likelihood": null,
+      "mitigation_next_step": null,
+      "decision_rationale": null,
+      "source_evidence": "Annie: \"I'll investigate whether the system can detect a transcript automatically and let Kazim know what I find.\"",
+      "review_flag": "Missing",
+      "reviewer_notes": null,
+      "due_date_text": null,
       "source": {
         "speaker": "Annie",
         "quote": "I'll investigate whether the system can detect a transcript automatically and let Kazim know what I find.",
@@ -34,15 +66,32 @@
         "verified": true
       },
       "confidence": "High",
-      "needs_pm_review": false,
-      "review_reasons": []
+      "needs_pm_review": true,
+      "review_reasons": [
+        "Project is missing.",
+        "Meeting date is missing."
+      ]
     },
     {
+      "record_id": "null-3",
+      "number": 3,
+      "project": null,
+      "meeting_date": null,
       "type": "Action",
+      "title": "Obtain sample project transcript",
       "description": "Ask Chloe for a sample project transcript; if she has nothing suitable, create an example.",
       "owner": "Izzy",
-      "due_date": "Not stated",
-      "due_date_resolved": null,
+      "due_date": null,
+      "status": "Open",
+      "priority": null,
+      "impact": null,
+      "likelihood": null,
+      "mitigation_next_step": null,
+      "decision_rationale": null,
+      "source_evidence": "Izzy: \"I'll ask Chloe for one. If she doesn't have anything suitable, I'll create an example.\"",
+      "review_flag": "Missing",
+      "reviewer_notes": null,
+      "due_date_text": null,
       "source": {
         "speaker": "Izzy",
         "quote": "I'll ask Chloe for one. If she doesn't have anything suitable, I'll create an example.",
@@ -50,15 +99,32 @@
         "verified": true
       },
       "confidence": "High",
-      "needs_pm_review": false,
-      "review_reasons": []
+      "needs_pm_review": true,
+      "review_reasons": [
+        "Project is missing.",
+        "Meeting date is missing."
+      ]
     },
     {
+      "record_id": "null-4",
+      "number": 4,
+      "project": null,
+      "meeting_date": null,
       "type": "Decision",
+      "title": "Use SharePoint for initial RAID data",
       "description": "Use SharePoint for RAID data in the first version; Planner may be revisited later.",
-      "owner": "Not stated",
-      "due_date": "Not stated",
-      "due_date_resolved": null,
+      "owner": null,
+      "due_date": null,
+      "status": "Open",
+      "priority": null,
+      "impact": null,
+      "likelihood": null,
+      "mitigation_next_step": null,
+      "decision_rationale": "Use SharePoint for the first version because Izzy agreed it makes sense now; revisit Planner later.",
+      "source_evidence": "Izzy: \"Yes, SharePoint makes sense for the first version.\"",
+      "review_flag": "Missing",
+      "reviewer_notes": null,
+      "due_date_text": null,
       "source": {
         "speaker": "Izzy",
         "quote": "Yes, SharePoint makes sense for the first version.",
@@ -66,15 +132,32 @@
         "verified": true
       },
       "confidence": "High",
-      "needs_pm_review": false,
-      "review_reasons": []
+      "needs_pm_review": true,
+      "review_reasons": [
+        "Project is missing.",
+        "Meeting date is missing."
+      ]
     },
     {
+      "record_id": "null-5",
+      "number": 5,
+      "project": null,
+      "meeting_date": null,
       "type": "Issue",
+      "title": "Sample project transcript unavailable",
       "description": "The team does not yet have a sample project transcript.",
-      "owner": "Not stated",
-      "due_date": "Not stated",
-      "due_date_resolved": null,
+      "owner": null,
+      "due_date": null,
+      "status": "Open",
+      "priority": null,
+      "impact": "Testing against representative project material is blocked until a sample is available.",
+      "likelihood": null,
+      "mitigation_next_step": "Izzy will ask Chloe for a sample and create an example if needed.",
+      "decision_rationale": null,
+      "source_evidence": "Kat: \"we still don't have the sample project transcript.\"",
+      "review_flag": "Missing",
+      "reviewer_notes": null,
+      "due_date_text": null,
       "source": {
         "speaker": "Kat",
         "quote": "we still don't have the sample project transcript.",
@@ -82,15 +165,32 @@
         "verified": true
       },
       "confidence": "High",
-      "needs_pm_review": false,
-      "review_reasons": []
+      "needs_pm_review": true,
+      "review_reasons": [
+        "Project is missing.",
+        "Meeting date is missing."
+      ]
     },
     {
+      "record_id": "null-6",
+      "number": 6,
+      "project": null,
+      "meeting_date": null,
       "type": "Dependency",
+      "title": "Sample transcript depends on Chloe",
       "description": "Getting a sample transcript depends on whether Chloe has something suitable.",
       "owner": "Izzy",
-      "due_date": "Not stated",
-      "due_date_resolved": null,
+      "due_date": null,
+      "status": "Open",
+      "priority": null,
+      "impact": null,
+      "likelihood": null,
+      "mitigation_next_step": null,
+      "decision_rationale": null,
+      "source_evidence": "Izzy: \"If she doesn't have anything suitable, I'll create an example.\"",
+      "review_flag": "Missing",
+      "reviewer_notes": null,
+      "due_date_text": null,
       "source": {
         "speaker": "Izzy",
         "quote": "If she doesn't have anything suitable, I'll create an example.",
@@ -98,8 +198,11 @@
         "verified": true
       },
       "confidence": "Medium",
-      "needs_pm_review": false,
-      "review_reasons": []
+      "needs_pm_review": true,
+      "review_reasons": [
+        "Project is missing.",
+        "Meeting date is missing."
+      ]
     }
   ]
 }

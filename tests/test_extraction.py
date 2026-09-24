@@ -27,14 +27,25 @@ TRANSCRIPT = """\
 
 def raw(**overrides):
     base = {
+        "project": "AIBP",
+        "meeting_date": "2026-09-23",
         "type": "Action",
+        "title": "Investigate transcript detection",
         "description": "Investigate automatic transcript detection.",
         "owner": "Annie",
         "due_date": "Not stated",
+        "status": "Open",
+        "priority": None,
+        "impact": None,
+        "likelihood": None,
+        "mitigation_next_step": None,
+        "decision_rationale": None,
         "source": {"speaker": "Annie", "quote": "I'll investigate whether the system", "timestamp": "10:02"},
         "confidence": "High",
+        "review_flag": "None",
         "needs_pm_review": False,
         "review_reason": None,
+        "reviewer_notes": None,
     }
     return {**base, **overrides}
 
@@ -54,9 +65,15 @@ def test_item_has_the_specified_fields():
     (item,) = extract(raw())
 
     assert list(item.to_dict()) == [
-        "type", "description", "owner", "due_date", "due_date_resolved",
-        "source", "confidence", "needs_pm_review", "review_reasons",
+        "record_id", "number", "project", "meeting_date", "type", "title",
+        "description", "owner", "due_date", "status", "priority", "impact",
+        "likelihood", "mitigation_next_step", "decision_rationale", "source_evidence",
+        "review_flag", "reviewer_notes", "due_date_text", "source", "confidence",
+        "needs_pm_review", "review_reasons",
     ]
+    assert item.to_dict()["record_id"] == "AIBP-1"
+    assert item.to_dict()["number"] == 1
+    assert item.to_dict()["status"] == "Open"
     assert item.to_dict()["source"] == {
         "speaker": "Annie", "quote": "I'll investigate whether the system", "timestamp": "10:02", "verified": True,
     }
@@ -135,7 +152,7 @@ def test_complete_action_needs_no_review():
 
 
 def test_tc02_action_without_owner_is_flagged():
-    (item,) = extract(raw(owner=None, description="Update the RAID log.",
+    (item,) = extract(raw(owner=None, title="Update RAID log", description="Update the RAID log.",
                           source={"speaker": "Kat", "quote": "We need to have the demo ready"}))
 
     assert item.owner == "Not stated"
@@ -234,7 +251,7 @@ def test_tc06_relative_due_date_resolved_with_meeting_date():
 
 
 def test_tc06_relative_due_date_without_meeting_date_is_left_and_flagged():
-    (item,) = extract(raw(due_date="tomorrow"))
+    (item,) = extract(raw(due_date="tomorrow", meeting_date=None))
 
     assert item.due_date == "tomorrow"
     assert item.due_date_resolved is None
@@ -276,13 +293,13 @@ def test_markdown_has_every_section_in_order():
 
 
 def test_markdown_counts_and_review_list():
-    items = extract(raw(), raw(owner=None, description="Update the RAID log.",
+    items = extract(raw(), raw(owner=None, title="Update RAID log", description="Update the RAID log.",
                                source={"speaker": "Kat", "quote": "We need to have the demo ready"}))
 
     markdown = items_to_markdown(items)
 
     assert "2 items: 2 Actions. 1 needs PM review." in markdown
-    assert "- **Action 2: Update the RAID log.** No owner stated." in markdown
+    assert "- **AIBP-2 — Update RAID log** No owner stated." in markdown
 
 
 def test_markdown_shows_resolved_date_and_unverified_source():
@@ -299,3 +316,38 @@ def test_markdown_escapes_table_breaking_characters():
     (item,) = extract(raw(description="Use A | B\nnext line"))
 
     assert "Use A \\| B next line" in items_to_markdown([item])
+
+
+def test_original_raid_fields_are_serialised():
+    (item,) = extract(raw(
+        priority="High",
+        mitigation_next_step="Run the regression test before Friday.",
+    ))
+    data = item.to_dict()
+    for field in (
+        "record_id", "number", "project", "meeting_date", "title", "status",
+        "priority", "impact", "likelihood", "mitigation_next_step",
+        "decision_rationale", "source_evidence", "review_flag", "reviewer_notes",
+    ):
+        assert field in data
+    assert data["priority"] == "High"
+    assert data["mitigation_next_step"] == "Run the regression test before Friday."
+
+
+def test_suggested_owner_is_flagged_as_inferred():
+    (item,) = extract(raw(owner="Chloe (suggested)", review_flag="Inferred"))
+
+    assert item.review_flag == "Inferred"
+    assert item.needs_pm_review
+    assert "only a suggestion" in " ".join(item.review_reasons)
+
+
+def test_record_ids_are_renumbered_after_deduplication():
+    items = extract(
+        raw(description="Duplicate", title="Duplicate"),
+        raw(description="Duplicate", title="Duplicate"),
+        raw(description="Different", title="Different", source={"speaker": "Kat", "quote": "We need to have the demo ready"}),
+    )
+
+    assert [item.number for item in items] == [1, 2]
+    assert [item.record_id for item in items] == ["AIBP-1", "AIBP-2"]

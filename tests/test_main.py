@@ -88,11 +88,17 @@ def test_items_json_is_data_not_presentation(mock_env, transcript_file):
     cli.main(["extract", str(transcript_file)])
 
     document = json.loads((transcript_file.parent / "project_items.json").read_text(encoding="utf-8"))
+    assert document["meetingSummary"].startswith("Extracted 6 project items")
     assert document["transcript"] == "transcript.md"
     assert document["meeting_date"] is None
     first = document["items"][0]
+    assert first["record_id"] == "null-1"
+    assert first["number"] == 1
     assert first["type"] == "Action"
-    assert first["owner"] == "Not stated"
+    assert first["owner"] is None
+    assert first["priority"] is None
+    assert first["mitigation_next_step"] is None
+    assert first["review_flag"] in {"Missing", "Ambiguous"}
     assert first["needs_pm_review"] is True
     assert first["source"] == {"speaker": "Kat", "quote": "We need to have the demo ready for Friday.",
                                "timestamp": None, "verified": True}
@@ -104,7 +110,17 @@ def test_meeting_date_option_resolves_relative_dates(mock_env, transcript_file):
 
     document = json.loads((transcript_file.parent / "project_items.json").read_text(encoding="utf-8"))
     assert document["meeting_date"] == "2026-09-23"
-    assert document["items"][0]["due_date_resolved"] == "2026-09-25"  # "Friday" after Wed 23rd
+    assert document["items"][0]["due_date"] == "2026-09-25"  # "Friday" after Wed 23rd
+    assert document["items"][0]["due_date_text"] == "Friday"
+
+
+def test_project_option_sets_project_and_record_ids(mock_env, transcript_file):
+    cli.main(["extract", str(transcript_file), "--project", "AIBP"])
+
+    document = json.loads((transcript_file.parent / "project_items.json").read_text(encoding="utf-8"))
+    assert document["project"] == "AIBP"
+    assert [item["record_id"] for item in document["items"]] == [f"AIBP-{i}" for i in range(1, 7)]
+    assert all(item["project"] == "AIBP" for item in document["items"])
 
 
 def test_meeting_date_is_read_from_transcript_header(mock_env, transcript_file):
